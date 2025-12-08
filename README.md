@@ -7,9 +7,11 @@ A minimal, terminal-first CLI tool to track token usage and costs across multipl
 ## Features
 
 - **Multi-provider support:** OpenAI, Anthropic (Claude), Google Gemini, DeepSeek
+- **Manual web tracking:** Track ChatGPT/Claude web usage without APIs
 - **Fast & lightweight:** Runs on weak PCs, uses local caching (15min TTL default)
 - **Token tracking:** Total tokens, prompt/completion breakdown, remaining quotas
 - **Cost estimation:** Automatic cost calculation based on provider pricing
+- **Usage warnings:** Get alerts when approaching prompt limits
 - **Zero waste:** Never calls model inference for status checks
 - **Terminal-friendly:** Clean ASCII table output
 
@@ -38,16 +40,31 @@ A minimal, terminal-first CLI tool to track token usage and costs across multipl
 git clone https://github.com/yourusername/llm-status.git
 cd llm-status
 
-# Install in development mode
-pip install -e .
+# Install in development mode (use pip3 if pip is not available)
+pip3 install -e .
+
+# Make the CLI script executable
+chmod +x llm-status
 ```
 
 For minimal environments (weak PCs), you can install without optional dependencies:
 
 ```bash
-pip install -e . --no-deps
+pip3 install -e . --no-deps
 # Then manually install only required dependencies
-pip install setuptools  # Only if needed
+pip3 install setuptools  # Only if needed
+```
+
+### Running the CLI
+
+You can run the CLI in two ways:
+
+```bash
+# Option 1: Direct script (recommended)
+./llm-status status
+
+# Option 2: Via Python module
+python3 -m llm_status.cli status
 ```
 
 ## Quick Start
@@ -126,6 +143,50 @@ llm-status clear-cache openai
 # Clear all
 llm-status clear-cache
 ```
+
+## Tracking ChatGPT Web Usage
+
+**NEW!** Since ChatGPT web doesn't have an API, `llm-status` can manually track your usage to warn you before hitting limits.
+
+### Track Each Prompt
+
+```bash
+./llm-status track chatgpt-web
+```
+
+### Check Your Status
+
+```bash
+./llm-status track-status chatgpt-web
+```
+
+**Example output:**
+```
+CHATGPT-WEB
+  Used:       36/40 prompts (90.0%)
+  Remaining:  4 prompts
+  Period:     3 hours
+  Next Reset: 2025-12-08 19:43:46
+  Status:     ⚠ WARNING - Low remaining!
+```
+
+### Quick Commands
+
+```bash
+# Track multiple prompts at once
+./llm-status track chatgpt-web --count 5
+
+# View all tracked services
+./llm-status track-status
+
+# Set custom limit (e.g., ChatGPT Plus)
+./llm-status set-limit chatgpt-web 80 3
+
+# Reset counter
+./llm-status reset-tracker chatgpt-web
+```
+
+**See [CHATGPT_TRACKING.md](CHATGPT_TRACKING.md) for detailed guide and tips!**
 
 ## Configuration
 

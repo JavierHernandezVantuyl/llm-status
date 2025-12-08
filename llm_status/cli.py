@@ -7,6 +7,7 @@ from getpass import getpass
 from .config import Config
 from .cache import Cache
 from .providers import PROVIDERS
+from .tracker import ManualTracker
 from .display import (
     format_status_table,
     format_detailed_usage,
@@ -22,6 +23,7 @@ class CLI:
         """Initialize CLI."""
         self.config = Config()
         self.cache = Cache()
+        self.tracker = ManualTracker()
 
     def run(self, args: Optional[List[str]] = None) -> int:
         """Run the CLI application.
@@ -115,6 +117,67 @@ class CLI:
         )
         clear_cache_parser.set_defaults(func=self.cmd_clear_cache)
 
+        # Track command (manual usage tracking for web services)
+        track_parser = subparsers.add_parser(
+            "track",
+            help="Manually track web service usage (e.g., ChatGPT web)"
+        )
+        track_parser.add_argument(
+            "provider",
+            help="Provider name (e.g., 'chatgpt-web', 'claude-web')"
+        )
+        track_parser.add_argument(
+            "--count",
+            type=int,
+            default=1,
+            help="Number of prompts to add (default: 1)"
+        )
+        track_parser.set_defaults(func=self.cmd_track)
+
+        # Track-status command
+        track_status_parser = subparsers.add_parser(
+            "track-status",
+            help="Show manual tracking status for web services"
+        )
+        track_status_parser.add_argument(
+            "provider",
+            nargs="?",
+            help="Provider name (shows all if not specified)"
+        )
+        track_status_parser.set_defaults(func=self.cmd_track_status)
+
+        # Set-limit command
+        set_limit_parser = subparsers.add_parser(
+            "set-limit",
+            help="Set custom limit for manual tracking"
+        )
+        set_limit_parser.add_argument(
+            "provider",
+            help="Provider name"
+        )
+        set_limit_parser.add_argument(
+            "limit",
+            type=int,
+            help="Number of prompts allowed per period"
+        )
+        set_limit_parser.add_argument(
+            "hours",
+            type=int,
+            help="Period in hours"
+        )
+        set_limit_parser.set_defaults(func=self.cmd_set_limit)
+
+        # Reset-tracker command
+        reset_tracker_parser = subparsers.add_parser(
+            "reset-tracker",
+            help="Reset manual usage tracker for a provider"
+        )
+        reset_tracker_parser.add_argument(
+            "provider",
+            help="Provider name"
+        )
+        reset_tracker_parser.set_defaults(func=self.cmd_reset_tracker)
+
         return parser
 
     def cmd_status(self, args) -> int:
@@ -169,6 +232,68 @@ class CLI:
             self.cache.clear()
             print(format_success("All cache cleared"))
         return 0
+
+    def cmd_track(self, args) -> int:
+        """Handle 'track' command - increment manual usage."""
+        stats = self.tracker.increment(args.provider, args.count)
+
+        print(f"\n✓ Tracked {args.count} prompt(s) for {args.provider}")
+        print(f"\nCurrent Status:")
+        print(f"  Used: {stats['used']}/{stats['limit']} ({stats['percentage_used']}%)")
+        print(f"  Remaining: {stats['remaining']}")
+        print(f"  Next Reset: {stats['next_reset']}")
+
+        if stats['warning']:
+            print(f"\n⚠ WARNING: Less than 20% remaining!")
+
+        return 0
+
+    def cmd_track_status(self, args) -> int:
+        """Handle 'track-status' command - show manual tracking status."""
+        if args.provider:
+            stats = self.tracker.get_usage(args.provider)
+            self._print_tracking_stats(args.provider, stats)
+        else:
+            all_stats = self.tracker.get_all_usage()
+            if not all_stats:
+                print("\nNo tracked providers yet.")
+                print("Use 'llm-status track <provider>' to start tracking.")
+                return 0
+
+            print("\nManual Tracking Status")
+            print("=" * 70)
+            for provider, stats in all_stats.items():
+                self._print_tracking_stats(provider, stats)
+                print("-" * 70)
+
+        return 0
+
+    def cmd_set_limit(self, args) -> int:
+        """Handle 'set-limit' command - set custom limits."""
+        self.tracker.set_limit(args.provider, args.limit, args.hours)
+        print(format_success(
+            f"Set limit for {args.provider}: {args.limit} prompts per {args.hours} hours"
+        ))
+        return 0
+
+    def cmd_reset_tracker(self, args) -> int:
+        """Handle 'reset-tracker' command - reset manual tracker."""
+        self.tracker.reset(args.provider)
+        print(format_success(f"Reset tracker for {args.provider}"))
+        return 0
+
+    def _print_tracking_stats(self, provider: str, stats: dict) -> None:
+        """Print tracking statistics for a provider."""
+        print(f"\n{provider.upper()}")
+        print(f"  Used:       {stats['used']}/{stats['limit']} prompts ({stats['percentage_used']}%)")
+        print(f"  Remaining:  {stats['remaining']} prompts")
+        print(f"  Period:     {stats['period_hours']} hours")
+        print(f"  Next Reset: {stats['next_reset']}")
+
+        if stats['warning']:
+            print(f"  Status:     ⚠ WARNING - Low remaining!")
+        else:
+            print(f"  Status:     ✓ OK")
 
     def _get_usage_data(self, provider_name: str, force_refresh: bool = False):
         """Get usage data for a provider (from cache or API).
