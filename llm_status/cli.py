@@ -59,6 +59,13 @@ class CLI:
 
         subparsers = parser.add_subparsers(title="commands", dest="command")
 
+        # Setup command
+        setup_parser = subparsers.add_parser(
+            "setup",
+            help="Interactive setup - add API keys for providers"
+        )
+        setup_parser.set_defaults(func=self.cmd_setup)
+
         # Status command
         status_parser = subparsers.add_parser(
             "status",
@@ -68,6 +75,11 @@ class CLI:
             "--force-refresh",
             action="store_true",
             help="Force refresh from API (bypass cache)"
+        )
+        status_parser.add_argument(
+            "--show-cost",
+            action="store_true",
+            help="Show cost estimates in output"
         )
         status_parser.set_defaults(func=self.cmd_status)
 
@@ -85,6 +97,11 @@ class CLI:
             "--force-refresh",
             action="store_true",
             help="Force refresh from API (bypass cache)"
+        )
+        usage_parser.add_argument(
+            "--show-cost",
+            action="store_true",
+            help="Show cost estimates in output"
         )
         usage_parser.set_defaults(func=self.cmd_usage)
 
@@ -180,6 +197,75 @@ class CLI:
 
         return parser
 
+    def cmd_setup(self, args) -> int:
+        """Handle 'setup' command - interactive setup wizard."""
+        print("\n" + "=" * 60)
+        print("  LLM Status & Usage Checker - Setup")
+        print("=" * 60)
+        print("\nWelcome! Let's set up API keys for your LLM providers.")
+        print("You can skip any provider by pressing Enter without typing.\n")
+
+        providers_info = {
+            "openai": {
+                "name": "OpenAI",
+                "instructions": "Get your API key from: https://platform.openai.com/api-keys"
+            },
+            "anthropic": {
+                "name": "Anthropic (Claude)",
+                "instructions": "Get your API key from: https://console.anthropic.com/settings/keys"
+            },
+            "gemini": {
+                "name": "Google Gemini",
+                "instructions": "Get your API key from: https://makersuite.google.com/app/apikey"
+            },
+            "deepseek": {
+                "name": "DeepSeek",
+                "instructions": "Get your API key from: https://platform.deepseek.com/api_keys"
+            }
+        }
+
+        configured_count = 0
+
+        for provider_id, info in providers_info.items():
+            print("-" * 60)
+            print(f"\n{info['name']}")
+            print(f"  {info['instructions']}\n")
+
+            # Check if already configured
+            existing_key = self.config.get_credential(provider_id)
+            if existing_key:
+                print(f"  ✓ Already configured")
+                update = input(f"  Update API key? [y/N]: ").strip().lower()
+                if update != 'y':
+                    configured_count += 1
+                    continue
+
+            api_key = getpass(f"  Enter API key (or press Enter to skip): ").strip()
+
+            if api_key:
+                self.config.add_credential(provider_id, api_key)
+                self.cache.clear(provider_id)
+                print(f"  ✓ API key saved for {info['name']}")
+                configured_count += 1
+            else:
+                print(f"  ⊘ Skipped")
+
+        print("\n" + "=" * 60)
+        print(f"Setup complete! Configured {configured_count} provider(s).")
+        print("=" * 60)
+
+        if configured_count == 0:
+            print("\nNo providers configured. You can:")
+            print("  • Run 'llm-status setup' again to add API keys")
+            print("  • Run 'llm-status add-cred <provider>' for a specific provider")
+            print("\nNote: The tool will show mock data until you add real API keys.\n")
+        else:
+            print("\nNext steps:")
+            print("  • Run 'llm-status status' to see usage across all providers")
+            print("  • Run 'llm-status usage <provider>' for detailed stats\n")
+
+        return 0
+
     def cmd_status(self, args) -> int:
         """Handle 'status' command."""
         usage_data_list = []
@@ -191,7 +277,17 @@ class CLI:
             )
             usage_data_list.append(usage_data)
 
-        print(format_status_table(usage_data_list))
+        show_cost = getattr(args, 'show_cost', False)
+        print(format_status_table(usage_data_list, show_cost=show_cost))
+
+        # Show helpful message if all providers are in MOCK/ERROR state
+        all_mock_or_error = all(
+            data.error_message and "[STUB]" in data.error_message or not data.quota_available
+            for data in usage_data_list
+        )
+        if all_mock_or_error:
+            print("\n💡 Tip: Run 'llm-status setup' to add your API keys for real data.\n")
+
         return 0
 
     def cmd_usage(self, args) -> int:
@@ -200,7 +296,8 @@ class CLI:
             args.provider,
             force_refresh=args.force_refresh
         )
-        print(format_detailed_usage(usage_data))
+        show_cost = getattr(args, 'show_cost', False)
+        print(format_detailed_usage(usage_data, show_cost=show_cost))
         return 0
 
     def cmd_add_cred(self, args) -> int:

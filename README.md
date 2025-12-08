@@ -69,124 +69,129 @@ python3 -m llm_status.cli status
 
 ## Quick Start
 
-### 1. View Status for All Providers
+### First Time Setup
+
+Run the interactive setup to add your API keys:
 
 ```bash
-llm-status status
+./llm-status setup
+```
+
+This will guide you through adding API keys for OpenAI, Anthropic, Gemini, and DeepSeek. You can skip any provider you don't use.
+
+**Example setup flow:**
+
+```
+============================================================
+  LLM Status & Usage Checker - Setup
+============================================================
+
+Welcome! Let's set up API keys for your LLM providers.
+You can skip any provider by pressing Enter without typing.
+
+------------------------------------------------------------
+
+OpenAI
+  Get your API key from: https://platform.openai.com/api-keys
+
+  Enter API key (or press Enter to skip): ****
+  ✓ API key saved for OpenAI
+
+[... continues for other providers ...]
+
+============================================================
+Setup complete! Configured 2 provider(s).
+============================================================
+
+Next steps:
+  • Run 'llm-status status' to see usage across all providers
+  • Run 'llm-status usage <provider>' for detailed stats
+```
+
+### View Status for All Providers
+
+```bash
+./llm-status status
 ```
 
 **Example output:**
 
 ```
 LLM Usage Status
-================================================================================
-+----------+--------------+------------+--------+---------------------+--------+
-| Provider | Tokens Used  | Cost (USD) | Period | Last Updated        | Status |
-+----------+--------------+------------+--------+---------------------+--------+
-| OPENAI   | 197,000      | $2.01      | month  | 2025-01-15 10:30:45 | STUB   |
-| ANTHROPIC| 123,000      | $0.78      | month  | 2025-01-15 10:30:45 | STUB   |
-| GEMINI   | 140,000      | $0.69      | month  | 2025-01-15 10:30:45 | STUB   |
-| DEEPSEEK | 85,000       | $0.02      | month  | 2025-01-15 10:30:45 | STUB   |
-+----------+--------------+------------+--------+---------------------+--------+
+================
++-----------+-------------+---------------------+--------+
+| Provider  | Tokens Used | Last Updated        | Status |
++-----------+-------------+---------------------+--------+
+| OPENAI    | 197,000     | 2025-12-08 16:47:27 | OK     |
+| ANTHROPIC | 123,000     | 2025-12-08 16:47:27 | OK     |
+| GEMINI    | 140,000     | 2025-12-08 16:47:27 | OK     |
+| DEEPSEEK  | 85,000      | 2025-12-08 16:47:27 | OK     |
++-----------+-------------+---------------------+--------+
 ```
 
-### 2. View Detailed Usage for One Provider
+**Optional:** Add `--show-cost` to see cost estimates:
+```bash
+./llm-status status --show-cost
+```
+
+### View Detailed Usage for One Provider
 
 ```bash
-llm-status usage openai
+./llm-status usage anthropic
 ```
 
 **Example output:**
 
 ```
-Detailed Usage: OPENAI
+Detailed Usage: ANTHROPIC
 ==================================================
-Provider           : OPENAI
-Period             : month
-Total Tokens       : 197,000
-Prompt Tokens      : 145,000
-Completion Tokens  : 52,000
-Tokens Remaining   : N/A
-Estimated Cost     : $2.01
-Last Updated       : 2025-01-15 10:30:45
-Quota Available    : Yes
-
-Note: [STUB] Using mock data. Configure API key for real data.
+Provider          : ANTHROPIC
+Period            : month
+Total Tokens      : 123,000
+Prompt Tokens     : 89,000
+Completion Tokens : 34,000
+Tokens Remaining  : N/A
+Last Updated      : 2025-12-08 16:47:27
+Quota Available   : Yes
 ==================================================
 ```
 
-### 3. Add API Credentials
+**Optional:** Add `--show-cost` to see cost estimate:
+```bash
+./llm-status usage anthropic --show-cost
+```
+
+### Add/Update API Credentials
 
 ```bash
-# Interactive mode (secure prompt)
-llm-status add-cred openai
+# Add a specific provider
+./llm-status add-cred openai
 
 # Or provide directly
-llm-status add-cred openai --api-key sk-...
+./llm-status add-cred openai --api-key sk-...
+
+# Or run setup again to update all
+./llm-status setup
 ```
 
 Credentials are stored in `~/.llm-status/config.json`.
 
-### 4. Force Refresh (Bypass Cache)
+### Force Refresh (Bypass Cache)
 
 ```bash
-llm-status status --force-refresh
-llm-status usage anthropic --force-refresh
+./llm-status status --force-refresh
+./llm-status usage anthropic --force-refresh
 ```
 
-### 5. Clear Cache
+### Clear Cache
 
 ```bash
 # Clear specific provider
-llm-status clear-cache openai
+./llm-status clear-cache openai
 
 # Clear all
-llm-status clear-cache
+./llm-status clear-cache
 ```
-
-## Tracking ChatGPT Web Usage
-
-**NEW!** Since ChatGPT web doesn't have an API, `llm-status` can manually track your usage to warn you before hitting limits.
-
-### Track Each Prompt
-
-```bash
-./llm-status track chatgpt-web
-```
-
-### Check Your Status
-
-```bash
-./llm-status track-status chatgpt-web
-```
-
-**Example output:**
-```
-CHATGPT-WEB
-  Used:       36/40 prompts (90.0%)
-  Remaining:  4 prompts
-  Period:     3 hours
-  Next Reset: 2025-12-08 19:43:46
-  Status:     ⚠ WARNING - Low remaining!
-```
-
-### Quick Commands
-
-```bash
-# Track multiple prompts at once
-./llm-status track chatgpt-web --count 5
-
-# View all tracked services
-./llm-status track-status
-
-# Set custom limit (e.g., ChatGPT Plus)
-./llm-status set-limit chatgpt-web 80 3
-
-# Reset counter
-./llm-status reset-tracker chatgpt-web
-```
-
-**See [CHATGPT_TRACKING.md](CHATGPT_TRACKING.md) for detailed guide and tips!**
 
 ## Configuration
 
@@ -359,17 +364,25 @@ class NewProviderAdapter(ProviderAdapter):
 
 ## Roadmap
 
-**Step 1 (Current):** Status & Usage Checker
-- ✓ Multi-provider support
-- ✓ Caching layer
-- ✓ CLI interface
-- ⧗ Real API integration (stub implementations)
+**Step 1 (Current):** Status & Usage Checker ✓
+- ✓ Multi-provider support (OpenAI, Anthropic, Gemini, DeepSeek)
+- ✓ Caching layer with configurable TTL
+- ✓ Interactive CLI with setup wizard
+- ✓ Simplified, focused display (cost optional)
+- ⧗ Real API integration (currently stub implementations)
 
-**Step 2 (Future):** Usage Optimizers
+**Step 2 (Planned):** Web Service Tracking
+- Browser extension for automatic ChatGPT/Claude web usage tracking
+- Real-time prompt counter in browser
+- Alerts before hitting rate limits
+- No manual tracking needed
+
+**Step 3 (Future):** Usage Optimizers & Analytics
 - Cost optimization recommendations
-- Token usage analytics
-- Provider comparison
+- Token usage analytics and trends
+- Provider comparison and suggestions
 - Alert system for quota limits
+- Usage reports and insights
 
 ## Contributing
 

@@ -72,40 +72,53 @@ def draw_table(headers: List[str], rows: List[List[str]], title: Optional[str] =
     return "\n".join(lines)
 
 
-def format_status_table(usage_data_list: List[UsageData]) -> str:
+def format_status_table(usage_data_list: List[UsageData], show_cost: bool = False) -> str:
     """Format status data for all providers as a table.
 
     Args:
         usage_data_list: List of UsageData objects
+        show_cost: Whether to include cost column (default: False)
 
     Returns:
         Formatted ASCII table
     """
-    headers = ["Provider", "Tokens Used", "Cost (USD)", "Period", "Last Updated", "Status"]
+    if show_cost:
+        headers = ["Provider", "Tokens Used", "Cost (USD)", "Last Updated", "Status"]
+    else:
+        headers = ["Provider", "Tokens Used", "Last Updated", "Status"]
+
     rows = []
 
     for data in usage_data_list:
         status = "OK" if data.quota_available and not data.error_message else "ERROR"
         if data.error_message and "[STUB]" in data.error_message:
-            status = "STUB"
+            status = "MOCK"
 
-        rows.append([
-            data.provider.upper(),
-            format_number(data.tokens_used),
-            format_cost(data.cost_usd),
-            data.period,
-            format_timestamp(data.last_updated),
-            status
-        ])
+        if show_cost:
+            rows.append([
+                data.provider.upper(),
+                format_number(data.tokens_used),
+                format_cost(data.cost_usd),
+                format_timestamp(data.last_updated),
+                status
+            ])
+        else:
+            rows.append([
+                data.provider.upper(),
+                format_number(data.tokens_used),
+                format_timestamp(data.last_updated),
+                status
+            ])
 
     return draw_table(headers, rows, title="LLM Usage Status")
 
 
-def format_detailed_usage(usage_data: UsageData) -> str:
+def format_detailed_usage(usage_data: UsageData, show_cost: bool = False) -> str:
     """Format detailed usage for a single provider.
 
     Args:
         usage_data: UsageData object
+        show_cost: Whether to show cost estimate
 
     Returns:
         Formatted output string
@@ -115,7 +128,7 @@ def format_detailed_usage(usage_data: UsageData) -> str:
         "=" * 50,
     ]
 
-    # Build key-value pairs
+    # Build key-value pairs (core usage info)
     details = [
         ("Provider", usage_data.provider.upper()),
         ("Period", usage_data.period),
@@ -123,10 +136,13 @@ def format_detailed_usage(usage_data: UsageData) -> str:
         ("Prompt Tokens", format_number(usage_data.prompt_tokens)),
         ("Completion Tokens", format_number(usage_data.completion_tokens)),
         ("Tokens Remaining", format_number(usage_data.tokens_remaining)),
-        ("Estimated Cost", format_cost(usage_data.cost_usd)),
         ("Last Updated", format_timestamp(usage_data.last_updated)),
         ("Quota Available", "Yes" if usage_data.quota_available else "No"),
     ]
+
+    # Add cost if requested and available
+    if show_cost and usage_data.cost_usd is not None:
+        details.insert(-2, ("Estimated Cost", format_cost(usage_data.cost_usd)))
 
     # Calculate max key length for alignment
     max_key_len = max(len(key) for key, _ in details)
