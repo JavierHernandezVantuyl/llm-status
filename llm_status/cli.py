@@ -203,7 +203,9 @@ class CLI:
         print("  LLM Status & Usage Checker - Setup")
         print("=" * 60)
         print("\nWelcome! Let's set up API keys for your LLM providers.")
-        print("You can skip any provider by pressing Enter without typing.\n")
+        print("\nTips:")
+        print("  • Press Enter without typing to skip a provider")
+        print("  • Type 'q' to quit setup at any time\n")
 
         providers_info = {
             "openai": {
@@ -235,14 +237,25 @@ class CLI:
             existing_key = self.config.get_credential(provider_id)
             if existing_key:
                 print(f"  ✓ Already configured")
-                update = input(f"  Update API key? [y/N]: ").strip().lower()
+                update = input(f"  Update API key? [y/N/q]: ").strip().lower()
+                if update == 'q':
+                    print("\n  Setup cancelled.")
+                    break
                 if update != 'y':
                     configured_count += 1
                     continue
 
-            api_key = getpass(f"  Enter API key (or press Enter to skip): ").strip()
+            # Use regular input instead of getpass so user can see they pressed Enter
+            try:
+                api_key = input(f"  Enter API key (or Enter to skip, 'q' to quit): ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print("\n\n  Setup cancelled.")
+                break
 
-            if api_key:
+            if api_key.lower() == 'q':
+                print("\n  Setup cancelled.")
+                break
+            elif api_key:
                 self.config.add_credential(provider_id, api_key)
                 self.cache.clear(provider_id)
                 print(f"  ✓ API key saved for {info['name']}")

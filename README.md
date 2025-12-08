@@ -67,6 +67,8 @@ You can run the CLI in two ways:
 python3 -m llm_status.cli status
 ```
 
+**📖 See [QUICK_START.md](QUICK_START.md) for all commands and examples!**
+
 ## Quick Start
 
 ### First Time Setup
