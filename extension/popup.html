@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LLM Usage Tracker</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>LLM Usage Tracker</h1>
+    </header>
+
+    <main id="providers-container">
+      <!-- Provider cards will be dynamically inserted here -->
+    </main>
+
+    <footer>
+      <button id="refresh-all" class="btn-refresh">Refresh All</button>
+      <div class="last-updated" id="last-updated">Never updated</div>
+    </footer>
+  </div>
+
+  <script src="providers.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
