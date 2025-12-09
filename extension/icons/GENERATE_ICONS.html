@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Generate Extension Icons</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 40px;
+      background: #f5f5f5;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    h1 {
+      margin-bottom: 20px;
+    }
+    .icons-grid {
+      display: flex;
+      gap: 30px;
+      margin: 30px 0;
+    }
+    .icon-preview {
+      text-align: center;
+    }
+    .icon-preview canvas {
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      margin-bottom: 10px;
+    }
+    button {
+      background: #3b82f6;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button:hover {
+      background: #2563eb;
+    }
+    .instructions {
+      background: #f0f9ff;
+      border-left: 4px solid #3b82f6;
+      padding: 15px;
+      margin: 20px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>LLM Usage Tracker - Icon Generator</h1>
+
+    <div class="instructions">
+      <h3>Instructions:</h3>
+      <ol>
+        <li>Click "Download All Icons" below</li>
+        <li>Save the three PNG files to this directory</li>
+        <li>The extension will now be ready to install!</li>
+      </ol>
+    </div>
+
+    <div class="icons-grid">
+      <div class="icon-preview">
+        <canvas id="icon16" width="16" height="16"></canvas>
+        <div>icon16.png</div>
+        <button onclick="downloadIcon('icon16', 'icon16.png')">Download</button>
+      </div>
+
+      <div class="icon-preview">
+        <canvas id="icon48" width="48" height="48"></canvas>
+        <div>icon48.png</div>
+        <button onclick="downloadIcon('icon48', 'icon48.png')">Download</button>
+      </div>
+
+      <div class="icon-preview">
+        <canvas id="icon128" width="128" height="128"></canvas>
+        <div>icon128.png</div>
+        <button onclick="downloadIcon('icon128', 'icon128.png')">Download</button>
+      </div>
+    </div>
+
+    <div style="text-align: center;">
+      <button onclick="downloadAllIcons()" style="background: #10b981; padding: 12px 24px; font-size: 16px;">
+        Download All Icons
+      </button>
+    </div>
+  </div>
+
+  <script>
+    // Draw icon on canvas
+    function drawIcon(canvas) {
+      const ctx = canvas.getContext('2d');
+      const size = canvas.width;
+
+      // Clear canvas
+      ctx.clearRect(0, 0, size, size);
+
+      // Create gradient background
+      const gradient = ctx.createLinearGradient(0, 0, size, size);
+      gradient.addColorStop(0, '#667eea');
+      gradient.addColorStop(1, '#764ba2');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, size, size);
+
+      // Draw percentage symbol
+      ctx.fillStyle = 'white';
+      ctx.font = `bold ${size * 0.5}px Arial`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('%', size / 2, size / 2);
+
+      // Add subtle border
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+      ctx.lineWidth = size * 0.05;
+      ctx.strokeRect(0, 0, size, size);
+    }
+
+    // Draw all icons
+    function generateIcons() {
+      drawIcon(document.getElementById('icon16'));
+      drawIcon(document.getElementById('icon48'));
+      drawIcon(document.getElementById('icon128'));
+    }
+
+    // Download a single icon
+    function downloadIcon(canvasId, filename) {
+      const canvas = document.getElementById(canvasId);
+      const link = document.createElement('a');
+      link.download = filename;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    }
+
+    // Download all icons
+    function downloadAllIcons() {
+      setTimeout(() => downloadIcon('icon16', 'icon16.png'), 100);
+      setTimeout(() => downloadIcon('icon48', 'icon48.png'), 300);
+      setTimeout(() => downloadIcon('icon128', 'icon128.png'), 500);
+    }
+
+    // Generate on load
+    window.addEventListener('load', generateIcons);
+  </script>
+</body>
+</html>
