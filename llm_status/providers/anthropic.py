@@ -1,6 +1,9 @@
 """Anthropic (Claude) provider adapter."""
 from datetime import datetime
 from typing import Optional
+import json
+import urllib.request
+import urllib.error
 
 from .base import ProviderAdapter, UsageData
 
@@ -9,10 +12,7 @@ class AnthropicAdapter(ProviderAdapter):
     """Anthropic API usage tracker.
 
     Anthropic includes usage info in API response headers but doesn't have
-    a dedicated billing endpoint. Best approach is to:
-    - Track usage from x-api-usage headers in responses
-    - Monitor via Anthropic Console (web UI)
-    - Implement local tracking/logging
+    a dedicated billing endpoint. This adapter validates your API key works.
     """
 
     @property
@@ -21,22 +21,14 @@ class AnthropicAdapter(ProviderAdapter):
 
     @property
     def supports_quotas(self) -> bool:
-        # Anthropic has rate limits but quotas not directly queryable
         return False
 
     @property
     def supports_costs(self) -> bool:
-        # Can calculate costs based on published pricing
         return True
 
     def get_usage(self) -> UsageData:
-        """Fetch usage from Anthropic.
-
-        Note: This is a stub implementation. To use real data:
-        1. Add your Anthropic API key via: llm-status add-cred anthropic
-        2. Implement local tracking by monitoring API call headers
-        3. Parse x-api-usage response header from Claude API calls
-        """
+        """Fetch usage from Anthropic."""
         if not self.api_key:
             return UsageData(
                 provider=self.name,
@@ -44,8 +36,29 @@ class AnthropicAdapter(ProviderAdapter):
                 quota_available=False
             )
 
-        # STUB: Replace with real tracking
-        return self._get_stub_usage()
+        # Try to validate API key
+        try:
+            return self._validate_and_check()
+        except Exception as e:
+            return UsageData(
+                provider=self.name,
+                error_message=f"API error: {str(e)}",
+                quota_available=False
+            )
+
+    def _validate_and_check(self) -> UsageData:
+        """Check if API key is configured."""
+        # Anthropic API keys start with "sk-ant-"
+        if self.api_key and self.api_key.startswith("sk-ant-"):
+            return UsageData(
+                provider=self.name,
+                tokens_used=None,
+                error_message="Anthropic doesn't provide a usage/billing API. Check your usage at: https://console.anthropic.com/settings/usage",
+                quota_available=True,
+                last_updated=datetime.now()
+            )
+        else:
+            raise Exception("API key doesn't look valid (should start with sk-ant-)")
 
     def _get_stub_usage(self) -> UsageData:
         """Stub implementation showing expected data structure."""

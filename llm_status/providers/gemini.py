@@ -31,11 +31,7 @@ class GeminiAdapter(ProviderAdapter):
     def get_usage(self) -> UsageData:
         """Fetch usage from Gemini API.
 
-        Note: This is a stub implementation. To use real data:
-        1. Add your Google AI API key via: llm-status add-cred gemini
-        2. Implement local tracking by monitoring API responses
-        3. Parse usageMetadata from Gemini API responses
-        4. Or integrate with Google Cloud Billing API
+        Note: Gemini doesn't provide a usage/billing API endpoint.
         """
         if not self.api_key:
             return UsageData(
@@ -44,8 +40,14 @@ class GeminiAdapter(ProviderAdapter):
                 quota_available=False
             )
 
-        # STUB: Replace with real tracking
-        return self._get_stub_usage()
+        # Gemini doesn't have a usage API - would need Google Cloud Billing API
+        return UsageData(
+            provider=self.name,
+            tokens_used=None,
+            error_message="Gemini doesn't provide usage API. Check https://aistudio.google.com/app/apikey for quotas.",
+            quota_available=True,
+            last_updated=datetime.now()
+        )
 
     def _get_stub_usage(self) -> UsageData:
         """Stub implementation showing expected data structure."""

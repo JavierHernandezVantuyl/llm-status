@@ -31,10 +31,7 @@ class DeepSeekAdapter(ProviderAdapter):
     def get_usage(self) -> UsageData:
         """Fetch usage from DeepSeek API.
 
-        Note: This is a stub implementation. To use real data:
-        1. Add your DeepSeek API key via: llm-status add-cred deepseek
-        2. Check DeepSeek API docs for usage/billing endpoints
-        3. Implement local tracking by monitoring API responses
+        Note: DeepSeek usage API endpoint not yet implemented.
         """
         if not self.api_key:
             return UsageData(
@@ -43,8 +40,14 @@ class DeepSeekAdapter(ProviderAdapter):
                 quota_available=False
             )
 
-        # STUB: Replace with real implementation
-        return self._get_stub_usage()
+        # DeepSeek usage API not yet implemented
+        return UsageData(
+            provider=self.name,
+            tokens_used=None,
+            error_message="DeepSeek usage API not yet implemented. Check https://platform.deepseek.com for your usage.",
+            quota_available=True,
+            last_updated=datetime.now()
+        )
 
     def _get_stub_usage(self) -> UsageData:
         """Stub implementation showing expected data structure."""
