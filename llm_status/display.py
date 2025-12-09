@@ -90,9 +90,18 @@ def format_status_table(usage_data_list: List[UsageData], show_cost: bool = Fals
     rows = []
 
     for data in usage_data_list:
-        status = "OK" if data.quota_available and not data.error_message else "ERROR"
-        if data.error_message and "[STUB]" in data.error_message:
-            status = "MOCK"
+        # Determine status based on what we know
+        if not data.quota_available:
+            status = "NO KEY"
+        elif data.error_message:
+            if "valid" in data.error_message.lower() or "doesn't provide" in data.error_message.lower():
+                status = "NO API"
+            elif "not yet implemented" in data.error_message.lower():
+                status = "TODO"
+            else:
+                status = "ERROR"
+        else:
+            status = "OK"
 
         if show_cost:
             rows.append([

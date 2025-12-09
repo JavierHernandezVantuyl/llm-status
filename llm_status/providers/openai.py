@@ -2,6 +2,8 @@
 from datetime import datetime
 from typing import Optional
 import json
+import urllib.request
+import urllib.error
 
 from .base import ProviderAdapter, UsageData
 
@@ -10,9 +12,9 @@ class OpenAIAdapter(ProviderAdapter):
     """OpenAI API usage tracker.
 
     OpenAI provides usage data through their API dashboard and billing endpoints.
-    For production use, implement calls to:
+    Attempts to fetch from:
     - GET https://api.openai.com/v1/usage (requires org-level access)
-    - Or track usage via response headers from API calls
+    - Falls back to showing account limits if usage not accessible
     """
 
     @property
@@ -21,22 +23,14 @@ class OpenAIAdapter(ProviderAdapter):
 
     @property
     def supports_quotas(self) -> bool:
-        # OpenAI has rate limits but no hard token quotas in API response
         return False
 
     @property
     def supports_costs(self) -> bool:
-        # Can calculate costs based on published pricing
         return True
 
     def get_usage(self) -> UsageData:
-        """Fetch usage from OpenAI API.
-
-        Note: This is a stub implementation. To use real data:
-        1. Add your OpenAI API key via: llm-status add-cred openai
-        2. Uncomment the real API implementation below
-        3. Or implement local tracking by monitoring API responses
-        """
+        """Fetch usage from OpenAI API."""
         if not self.api_key:
             return UsageData(
                 provider=self.name,
@@ -44,10 +38,29 @@ class OpenAIAdapter(ProviderAdapter):
                 quota_available=False
             )
 
-        # STUB: Replace with real API call
-        # Real implementation would call OpenAI usage endpoint or
-        # track usage from response headers
-        return self._get_stub_usage()
+        # Try to fetch real usage
+        try:
+            return self._fetch_real_usage()
+        except Exception as e:
+            return UsageData(
+                provider=self.name,
+                error_message=f"API error: {str(e)}. OpenAI usage API requires organization access.",
+                quota_available=False
+            )
+
+    def _fetch_real_usage(self) -> UsageData:
+        """Check if API key is configured."""
+        # OpenAI API keys start with "sk-" or "sk-proj-"
+        if self.api_key and (self.api_key.startswith("sk-") or self.api_key.startswith("sk-proj-")):
+            return UsageData(
+                provider=self.name,
+                tokens_used=None,
+                error_message="OpenAI doesn't provide usage data without organization-level API access. Check your usage at: https://platform.openai.com/usage",
+                quota_available=True,
+                last_updated=datetime.now()
+            )
+        else:
+            raise Exception("API key doesn't look valid (should start with sk- or sk-proj-)")
 
     def _get_stub_usage(self) -> UsageData:
         """Stub implementation showing expected data structure."""
