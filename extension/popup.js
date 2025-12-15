@@ -42,8 +42,8 @@ function createProviderCard(provider, usageData) {
     ${usageData && usageData.success ? `
       <div class="usage-stats">
         <div class="usage-numbers">
-          <span class="usage-count">${usageData.messagesUsed} / ${usageData.messagesLimit} messages</span>
-          <span class="usage-percentage">${usageData.percentage}%</span>
+          <span class="usage-count">${usageData.percentage}% usage</span>
+          <span class="usage-percentage">${usageData.status === 'critical' ? '⚠️ Near limit' : usageData.status === 'warning' ? '⚠️ High usage' : '✓ Good'}</span>
         </div>
         <div class="progress-bar">
           <div class="progress-fill progress-${usageData.status || 'ok'}"
@@ -51,9 +51,18 @@ function createProviderCard(provider, usageData) {
         </div>
       </div>
 
+      ${usageData.totalTokens !== undefined ? `
+        <div class="token-stats">
+          <div class="token-label">Token Load (${usageData.windowHours || 3}h window):</div>
+          <div class="token-value ${usageData.totalTokens > 2000 ? 'critical' : usageData.totalTokens > 1600 ? 'warning' : 'ok'}">
+            ~${usageData.totalTokens.toLocaleString()} tokens
+          </div>
+        </div>
+      ` : ''}
+
       <div class="meta-info">
         ${usageData.planType ? `<span class="plan-type">${usageData.planType} Plan</span>` : '<span></span>'}
-        ${usageData.resetTime ? `<span class="reset-time">Resets ${usageData.resetTime}</span>` : '<span></span>'}
+        ${usageData.resetTime ? `<span class="reset-time">Resets ${usageData.resetTime}</span>` : usageData.messageCount !== undefined ? `<span class="reset-time">${usageData.messageCount} messages</span>` : '<span></span>'}
       </div>
     ` : usageData && usageData.error ? `
       <div class="error-message">
@@ -137,20 +146,34 @@ async function loadAllProviders() {
 async function refreshProvider(providerId) {
   console.log('[LLM Tracker Popup] Refreshing provider:', providerId);
 
+  // Show loading state immediately
+  const card = document.querySelector(`[data-provider="${providerId}"]`);
+  if (card) {
+    const refreshBtn = card.querySelector('.btn-refresh');
+    if (refreshBtn) {
+      refreshBtn.textContent = 'Refreshing...';
+      refreshBtn.disabled = true;
+    }
+  }
+
   try {
     // Request refresh from background script
+    console.log('[LLM Tracker Popup] Sending REFRESH_USAGE message...');
     await chrome.runtime.sendMessage({
       type: 'REFRESH_USAGE',
       provider: providerId
     });
 
-    // Wait a bit for the content script to respond
+    // Wait longer for the content script to respond (3 seconds instead of 1.5)
     setTimeout(() => {
+      console.log('[LLM Tracker Popup] Reloading providers after refresh...');
       loadAllProviders();
-    }, 1500);
+    }, 3000);
 
   } catch (error) {
     console.error('[LLM Tracker Popup] Error refreshing provider:', error);
+    // Reset button on error
+    setTimeout(() => loadAllProviders(), 500);
   }
 }
 

@@ -1,0 +1,460 @@
+/**
+ * ChatGPT Usage Tracker with Token Estimation
+ * Intercepts network requests and tracks both message count and token usage
+ */
+
+(function() {
+  'use strict';
+
+  const PROVIDER_ID = 'chatgpt';
+  const STORAGE_KEY = 'chatgpt_usage_history';
+  const WINDOW_HOURS = 3; // Track usage over 3 hour rolling window
+  const TOKEN_ESTIMATE_DIVISOR = 4; // Characters / 4 = approximate tokens
+  const HIGH_TOKEN_THRESHOLD = 2000; // Warning threshold for token usage
+  const MESSAGE_LIMIT = 40; // Default ChatGPT free tier limit
+
+  /**
+   * Calculate estimated tokens from text
+   */
+  function estimateTokens(text) {
+    if (!text || typeof text !== 'string') return 0;
+    return Math.ceil(text.length / TOKEN_ESTIMATE_DIVISOR);
+  }
+
+  /**
+   * Get usage history from storage
+   */
+  async function getUsageHistory() {
+    try {
+      const result = await chrome.storage.local.get(STORAGE_KEY);
+      return result[STORAGE_KEY] || [];
+    } catch (error) {
+      console.error('[ChatGPT Tracker] Error getting history:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Save usage entry to storage
+   */
+  async function saveUsageEntry(tokens) {
+    try {
+      const history = await getUsageHistory();
+
+      // Add new entry
+      history.push({
+        timestamp: Date.now(),
+        tokens: tokens
+      });
+
+      // Clean up old entries (older than WINDOW_HOURS)
+      const cutoffTime = Date.now() - (WINDOW_HOURS * 60 * 60 * 1000);
+      const recentHistory = history.filter(entry => entry.timestamp > cutoffTime);
+
+      // Save back to storage
+      await chrome.storage.local.set({ [STORAGE_KEY]: recentHistory });
+
+      console.log('[ChatGPT Tracker] Saved usage:', tokens, 'tokens. Total entries:', recentHistory.length);
+
+      // Update UI and send to background
+      await updateUsageDisplay();
+
+    } catch (error) {
+      console.error('[ChatGPT Tracker] Error saving usage:', error);
+    }
+  }
+
+  /**
+   * Calculate current usage from history
+   */
+  async function calculateUsage() {
+    const history = await getUsageHistory();
+
+    const messageCount = history.length;
+    const totalTokens = history.reduce((sum, entry) => sum + entry.tokens, 0);
+
+    // Determine status
+    let status = 'ok';
+    const messagePercentage = (messageCount / MESSAGE_LIMIT) * 100;
+
+    if (messagePercentage >= 95 || totalTokens >= HIGH_TOKEN_THRESHOLD) {
+      status = 'critical';
+    } else if (messagePercentage >= 80 || totalTokens >= (HIGH_TOKEN_THRESHOLD * 0.8)) {
+      status = 'warning';
+    }
+
+    return {
+      provider: PROVIDER_ID,
+      timestamp: Date.now(),
+      success: true,
+      messageCount,
+      messagesUsed: messageCount,
+      messagesLimit: MESSAGE_LIMIT,
+      messagesRemaining: MESSAGE_LIMIT - messageCount,
+      percentage: ((messageCount / MESSAGE_LIMIT) * 100).toFixed(1),
+      totalTokens,
+      status,
+      planType: 'free', // Can be enhanced to detect Plus
+      windowHours: WINDOW_HOURS
+    };
+  }
+
+  /**
+   * Send usage data to background script
+   */
+  async function sendUsageToBackground() {
+    const usage = await calculateUsage();
+
+    chrome.runtime.sendMessage({
+      type: 'USAGE_UPDATE',
+      data: usage
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.error('[ChatGPT Tracker] Error sending to background:', chrome.runtime.lastError);
+      }
+    });
+  }
+
+  /**
+   * Inject fetch interceptor into page context
+   * (Content scripts can't directly intercept page fetch, so we inject code)
+   */
+  function injectFetchInterceptor() {
+    const script = document.createElement('script');
+    script.textContent = `
+      (function() {
+        const originalFetch = window.fetch;
+
+        window.fetch = async function(...args) {
+          const [resource, config] = args;
+
+          // Call original fetch
+          const response = await originalFetch.apply(this, args);
+
+          // Check if this is a ChatGPT conversation request
+          if (typeof resource === 'string' && resource.includes('/backend-api/conversation')) {
+            console.log('[ChatGPT Tracker] Intercepted conversation request');
+
+            // Try to parse the request body
+            try {
+              if (config && config.body) {
+                const bodyText = config.body;
+                let bodyJson;
+
+                if (typeof bodyText === 'string') {
+                  bodyJson = JSON.parse(bodyText);
+                } else {
+                  bodyJson = bodyText;
+                }
+
+                // Extract user message text
+                let messageText = '';
+
+                if (bodyJson.messages && Array.isArray(bodyJson.messages)) {
+                  const lastMessage = bodyJson.messages[bodyJson.messages.length - 1];
+
+                  if (lastMessage && lastMessage.content) {
+                    if (typeof lastMessage.content === 'string') {
+                      messageText = lastMessage.content;
+                    } else if (lastMessage.content.parts && Array.isArray(lastMessage.content.parts)) {
+                      messageText = lastMessage.content.parts.join(' ');
+                    }
+                  }
+                }
+
+                if (messageText) {
+                  const estimatedTokens = Math.ceil(messageText.length / 4);
+                  console.log('[ChatGPT Tracker] Message:', messageText.substring(0, 50) + '...');
+                  console.log('[ChatGPT Tracker] Estimated tokens:', estimatedTokens);
+
+                  // Send to content script via custom event
+                  window.dispatchEvent(new CustomEvent('chatgpt-usage-update', {
+                    detail: { tokens: estimatedTokens, text: messageText }
+                  }));
+                }
+              }
+            } catch (error) {
+              console.warn('[ChatGPT Tracker] Parse failed (non-critical):', error.message);
+              // Send fallback
+              window.dispatchEvent(new CustomEvent('chatgpt-usage-update', {
+                detail: { tokens: 0, text: '' }
+              }));
+            }
+          }
+
+          return response;
+        };
+
+        console.log('[ChatGPT Tracker] ✓ Fetch interceptor injected');
+      })();
+    `;
+
+    (document.head || document.documentElement).appendChild(script);
+    script.remove();
+
+    console.log('[ChatGPT Tracker] ✓ Interceptor script injected');
+  }
+
+  /**
+   * Listen for usage updates from injected script
+   */
+  function listenForUsageUpdates() {
+    window.addEventListener('chatgpt-usage-update', async (event) => {
+      const { tokens, text } = event.detail;
+      console.log('[ChatGPT Tracker] Received usage update:', tokens, 'tokens');
+
+      // Save using Chrome API (available in content script context)
+      await saveUsageEntry(tokens);
+    });
+
+    console.log('[ChatGPT Tracker] ✓ Listening for usage updates');
+  }
+
+  /**
+   * Create floating UI overlay
+   */
+  function createFloatingUI() {
+    // Check if already exists
+    if (document.getElementById('chatgpt-usage-overlay')) return;
+
+    const overlay = document.createElement('div');
+    overlay.id = 'chatgpt-usage-overlay';
+    overlay.innerHTML = `
+      <div class="usage-header">
+        <span>ChatGPT Usage</span>
+        <button class="close-btn">×</button>
+      </div>
+      <div class="usage-content">
+        <div class="usage-metric">
+          <label>Messages:</label>
+          <div class="metric-bar">
+            <div class="metric-fill message-fill" style="width: 0%"></div>
+          </div>
+          <span class="metric-text message-text">0 / 40</span>
+        </div>
+        <div class="usage-metric">
+          <label>Est. Load:</label>
+          <div class="metric-bar">
+            <div class="metric-fill token-fill" style="width: 0%"></div>
+          </div>
+          <span class="metric-text token-text">~0 tokens</span>
+        </div>
+      </div>
+      <div class="usage-footer">
+        <button class="refresh-btn">Refresh</button>
+      </div>
+    `;
+
+    // Add styles
+    const style = document.createElement('style');
+    style.textContent = `
+      #chatgpt-usage-overlay {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        width: 280px;
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        z-index: 10000;
+        overflow: hidden;
+      }
+
+      #chatgpt-usage-overlay .usage-header {
+        background: linear-gradient(135deg, #10a37f 0%, #1a7f64 100%);
+        color: white;
+        padding: 12px 16px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-weight: 600;
+        font-size: 14px;
+      }
+
+      #chatgpt-usage-overlay .close-btn {
+        background: none;
+        border: none;
+        color: white;
+        font-size: 24px;
+        cursor: pointer;
+        padding: 0;
+        width: 24px;
+        height: 24px;
+        line-height: 20px;
+        opacity: 0.8;
+      }
+
+      #chatgpt-usage-overlay .close-btn:hover {
+        opacity: 1;
+      }
+
+      #chatgpt-usage-overlay .usage-content {
+        padding: 16px;
+      }
+
+      #chatgpt-usage-overlay .usage-metric {
+        margin-bottom: 16px;
+      }
+
+      #chatgpt-usage-overlay .usage-metric:last-child {
+        margin-bottom: 0;
+      }
+
+      #chatgpt-usage-overlay .usage-metric label {
+        display: block;
+        font-size: 12px;
+        font-weight: 600;
+        color: #666;
+        margin-bottom: 6px;
+      }
+
+      #chatgpt-usage-overlay .metric-bar {
+        height: 8px;
+        background: #e5e7eb;
+        border-radius: 4px;
+        overflow: hidden;
+        margin-bottom: 6px;
+      }
+
+      #chatgpt-usage-overlay .metric-fill {
+        height: 100%;
+        transition: width 0.3s ease, background-color 0.3s ease;
+        border-radius: 4px;
+      }
+
+      #chatgpt-usage-overlay .metric-fill.ok {
+        background: linear-gradient(90deg, #10b981, #34d399);
+      }
+
+      #chatgpt-usage-overlay .metric-fill.warning {
+        background: linear-gradient(90deg, #f59e0b, #fbbf24);
+      }
+
+      #chatgpt-usage-overlay .metric-fill.critical {
+        background: linear-gradient(90deg, #ef4444, #f87171);
+      }
+
+      #chatgpt-usage-overlay .metric-text {
+        font-size: 13px;
+        color: #374151;
+        font-weight: 500;
+      }
+
+      #chatgpt-usage-overlay .usage-footer {
+        padding: 12px 16px;
+        border-top: 1px solid #e5e7eb;
+        display: flex;
+        justify-content: flex-end;
+      }
+
+      #chatgpt-usage-overlay .refresh-btn {
+        background: #10a37f;
+        color: white;
+        border: none;
+        padding: 6px 16px;
+        border-radius: 6px;
+        font-size: 13px;
+        cursor: pointer;
+        font-weight: 500;
+      }
+
+      #chatgpt-usage-overlay .refresh-btn:hover {
+        background: #0d8c6c;
+      }
+
+      #chatgpt-usage-overlay.hidden {
+        display: none;
+      }
+    `;
+
+    document.head.appendChild(style);
+    document.body.appendChild(overlay);
+
+    // Add event listeners
+    overlay.querySelector('.close-btn').addEventListener('click', () => {
+      overlay.classList.add('hidden');
+    });
+
+    overlay.querySelector('.refresh-btn').addEventListener('click', () => {
+      updateUsageDisplay();
+    });
+
+    console.log('[ChatGPT Tracker] ✓ Floating UI created');
+  }
+
+  /**
+   * Update the floating UI with current usage
+   */
+  async function updateUsageDisplay() {
+    const overlay = document.getElementById('chatgpt-usage-overlay');
+    if (!overlay) return;
+
+    const usage = await calculateUsage();
+
+    // Update message metric
+    const messageFill = overlay.querySelector('.message-fill');
+    const messageText = overlay.querySelector('.message-text');
+
+    messageFill.style.width = usage.percentage + '%';
+    messageFill.className = 'metric-fill message-fill ' + usage.status;
+    messageText.textContent = `${usage.messagesUsed} / ${usage.messagesLimit}`;
+
+    // Update token metric
+    const tokenFill = overlay.querySelector('.token-fill');
+    const tokenText = overlay.querySelector('.token-text');
+
+    const tokenPercentage = Math.min((usage.totalTokens / HIGH_TOKEN_THRESHOLD) * 100, 100);
+    tokenFill.style.width = tokenPercentage + '%';
+    tokenFill.className = 'metric-fill token-fill ' + usage.status;
+    tokenText.textContent = `~${usage.totalTokens.toLocaleString()} tokens`;
+
+    // Send to background
+    await sendUsageToBackground();
+
+    console.log('[ChatGPT Tracker] ✓ UI updated:', usage);
+  }
+
+  /**
+   * Initialize
+   */
+  async function init() {
+    console.log('[ChatGPT Tracker] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('[ChatGPT Tracker] Content script loaded');
+    console.log('[ChatGPT Tracker] Version: Fetch interception + Token tracking');
+    console.log('[ChatGPT Tracker] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+    // Inject fetch interceptor into page context
+    injectFetchInterceptor();
+
+    // Listen for usage updates from injected script
+    listenForUsageUpdates();
+
+    // Create floating UI
+    setTimeout(() => {
+      createFloatingUI();
+      updateUsageDisplay();
+    }, 2000);
+
+    // Listen for refresh requests from popup
+    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+      if (request.type === 'REQUEST_USAGE_UPDATE' && request.provider === PROVIDER_ID) {
+        console.log('[ChatGPT Tracker] Refresh requested');
+        updateUsageDisplay();
+        sendResponse({ status: 'refreshed' });
+      }
+      return true;
+    });
+
+    // Initial usage calculation
+    await updateUsageDisplay();
+  }
+
+  // Wait for page to be ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+
+})();

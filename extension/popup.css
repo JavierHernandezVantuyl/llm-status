@@ -147,6 +147,43 @@ main {
   background: linear-gradient(90deg, #f59e0b, #fbbf24);
 }
 
+/* Token Stats */
+.token-stats {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.token-label {
+  font-size: 11px;
+  color: #6b7280;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.token-value {
+  font-size: 16px;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: 4px;
+  display: inline-block;
+}
+
+.token-value.ok {
+  color: #059669;
+  background: #d1fae5;
+}
+
+.token-value.warning {
+  color: #d97706;
+  background: #fef3c7;
+}
+
+.token-value.critical {
+  color: #dc2626;
+  background: #fee2e2;
+}
+
 .progress-critical {
   background: linear-gradient(90deg, #ef4444, #f87171);
 }

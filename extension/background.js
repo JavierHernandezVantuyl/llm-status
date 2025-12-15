@@ -35,7 +35,7 @@ function updateBadge(provider, usageData) {
   chrome.action.setBadgeBackgroundColor({ color });
 
   // Set tooltip
-  const tooltip = `${usageData.provider.toUpperCase()}: ${usageData.messagesUsed}/${usageData.messagesLimit} messages`;
+  const tooltip = `${usageData.provider.toUpperCase()}: ${usageData.percentage}% usage${usageData.resetTime ? ' • Resets ' + usageData.resetTime : ''}`;
   chrome.action.setTitle({ title: tooltip });
 }
 
@@ -123,18 +123,57 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;  // Keep channel open for async response
   }
 
+  else if (request.type === 'SHOW_NOTIFICATION') {
+    // ChatGPT content script requesting notification
+    const { level, title, message } = request;
+
+    let iconPath = 'icons/icon48.png';
+    let priority = 0;
+
+    if (level === 'critical') {
+      priority = 2;
+    } else if (level === 'warning') {
+      priority = 1;
+    }
+
+    chrome.notifications.create({
+      type: 'basic',
+      iconUrl: iconPath,
+      title: title,
+      message: message,
+      priority: priority
+    }, (notificationId) => {
+      console.log('[LLM Tracker Background] Notification shown:', notificationId);
+    });
+
+    sendResponse({ status: 'notification_sent' });
+  }
+
   else if (request.type === 'REFRESH_USAGE') {
     // Popup wants to trigger a refresh
     // Send message to content script if it's active
     chrome.tabs.query({ url: '*://claude.ai/*' }, (tabs) => {
+      if (tabs.length === 0) {
+        console.log('[LLM Tracker Background] No Claude tabs found');
+        sendResponse({ status: 'no_tabs', message: 'No Claude.ai tabs are open' });
+        return;
+      }
+
+      let sentCount = 0;
       tabs.forEach(tab => {
         chrome.tabs.sendMessage(tab.id, {
           type: 'REQUEST_USAGE_UPDATE',
           provider: request.provider
+        }).catch(error => {
+          console.log('[LLM Tracker Background] Could not send to tab', tab.id, '- content script may not be loaded');
         });
+        sentCount++;
       });
+
+      console.log(`[LLM Tracker Background] Sent refresh request to ${sentCount} tabs`);
     });
     sendResponse({ status: 'requested' });
+    return true; // Keep channel open
   }
 });
 
@@ -166,6 +205,9 @@ chrome.alarms.onAlarm.addListener((alarm) => {
         chrome.tabs.sendMessage(tab.id, {
           type: 'REQUEST_USAGE_UPDATE',
           provider: 'claude'
+        }).catch(error => {
+          // Silently ignore - content script may not be loaded on all tabs
+          console.log('[LLM Tracker Background] Periodic refresh: tab', tab.id, 'not responding');
         });
       });
     });

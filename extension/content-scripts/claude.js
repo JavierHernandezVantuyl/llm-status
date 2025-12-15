@@ -1,6 +1,8 @@
 /**
  * Claude Usage Scraper
  * Runs on claude.ai to extract chat usage information
+ *
+ * TOS-COMPLIANT: Only reads visible page content, no API calls
  */
 
 (function() {
@@ -10,12 +12,26 @@
   const CHECK_INTERVAL = 5000; // Check every 5 seconds when on settings page
 
   /**
-   * Scrape usage from claude.ai/settings/usage page
+   * Wait for page to be ready and percentage to appear
    */
-  function scrapeUsageFromPage() {
-    // Look for usage information on the page
-    // This will depend on the actual HTML structure of claude.ai/settings/usage
+  async function waitForPageLoad(maxAttempts = 10) {
+    for (let i = 0; i < maxAttempts; i++) {
+      const text = document.body.innerText;
+      if (text.includes('% used')) {
+        console.log('[LLM Tracker] ✓ Page loaded, usage data visible');
+        return true;
+      }
+      console.log(`[LLM Tracker] Waiting for page to load... (attempt ${i + 1}/${maxAttempts})`);
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    console.log('[LLM Tracker] ⚠️ Page load timeout, proceeding anyway');
+    return false;
+  }
 
+  /**
+   * Scrape usage from visible page content ONLY (TOS-compliant)
+   */
+  async function scrapeUsageFromPage() {
     const result = {
       provider: PROVIDER_ID,
       timestamp: Date.now(),
@@ -23,122 +39,73 @@
     };
 
     try {
-      // Method 1: Try to find usage text patterns
+      // Wait for page to be ready
+      await waitForPageLoad();
+
+      // Re-read the DOM fresh each time
       const bodyText = document.body.innerText;
 
-      // Look for patterns like "25 of 45 messages" or "25/45"
-      const patterns = [
-        /(\d+)\s*(?:of|\/)\s*(\d+)\s*messages?/i,
-        /messages?[:\s]+(\d+)\s*\/\s*(\d+)/i,
-        /usage[:\s]+(\d+)\s*\/\s*(\d+)/i
-      ];
+      console.log('[LLM Tracker] ===== SCRAPING PAGE =====');
+      console.log('[LLM Tracker] Timestamp:', new Date().toLocaleTimeString());
+      console.log('[LLM Tracker] Looking for usage percentages...');
 
-      for (const pattern of patterns) {
-        const match = bodyText.match(pattern);
-        if (match) {
-          result.messagesUsed = parseInt(match[1]);
-          result.messagesLimit = parseInt(match[2]);
-          result.messagesRemaining = result.messagesLimit - result.messagesUsed;
-          result.percentage = (result.messagesUsed / result.messagesLimit * 100).toFixed(1);
-          result.success = true;
-          break;
-        }
-      }
+      // Look for "X% used" pattern
+      const percentagePattern = /(\d+)%\s*used/gi;
+      const matches = [...bodyText.matchAll(percentagePattern)];
 
-      // Look for reset time
-      const resetPatterns = [
-        /resets?\s+in[:\s]+([^.\n]+)/i,
-        /window\s+resets?\s+in[:\s]+([^.\n]+)/i
-      ];
+      if (matches.length > 0) {
+        // Get all percentages found
+        const percentages = matches.map(m => parseInt(m[1]));
+        const maxPercentage = Math.max(...percentages);
 
-      for (const pattern of resetPatterns) {
-        const match = bodyText.match(pattern);
-        if (match) {
-          result.resetTime = match[1].trim();
-          break;
-        }
-      }
+        console.log('[LLM Tracker] ✓ Found percentages:', percentages);
+        console.log('[LLM Tracker] → Using maximum:', maxPercentage + '%');
 
-      // Determine plan type based on limit
-      if (result.messagesLimit) {
-        result.planType = result.messagesLimit <= 50 ? 'free' : 'pro';
-      }
+        result.percentage = maxPercentage.toFixed(1);
+        result.success = true;
 
-      // Determine status
-      if (result.percentage) {
-        const pct = parseFloat(result.percentage);
-        if (pct >= 95) {
+        // Determine status
+        if (maxPercentage >= 95) {
           result.status = 'critical';
-        } else if (pct >= 80) {
+        } else if (maxPercentage >= 80) {
           result.status = 'warning';
         } else {
           result.status = 'ok';
         }
+
+        // Look for reset time
+        const resetPattern = /Resets?\s+in\s+([^.\n]+)/i;
+        const resetMatch = bodyText.match(resetPattern);
+        if (resetMatch) {
+          result.resetTime = resetMatch[1].trim();
+          console.log('[LLM Tracker] ✓ Reset time:', result.resetTime);
+        }
+
+        // Detect plan type from visible text
+        if (bodyText.toLowerCase().includes('pro plan')) {
+          result.planType = 'pro';
+        } else if (bodyText.toLowerCase().includes('free plan')) {
+          result.planType = 'free';
+        } else {
+          // Default guess based on URL/context
+          result.planType = 'unknown';
+        }
+
+        console.log('[LLM Tracker] ✓ Final data:', result);
+
+      } else {
+        console.log('[LLM Tracker] ✗ No "X% used" pattern found');
+        console.log('[LLM Tracker] Page text sample:', bodyText.substring(0, 500));
+        result.error = 'Usage percentage not found on page';
       }
 
     } catch (error) {
-      console.error('[LLM Tracker] Error scraping Claude usage:', error);
+      console.error('[LLM Tracker] Error scraping:', error);
       result.error = error.message;
     }
 
+    console.log('[LLM Tracker] ===== SCRAPING COMPLETE =====');
     return result;
-  }
-
-  /**
-   * Fetch usage from Claude API (if scraping doesn't work)
-   */
-  async function fetchUsageFromAPI() {
-    try {
-      const orgResponse = await fetch('https://claude.ai/api/organizations', {
-        credentials: 'include'
-      });
-
-      if (!orgResponse.ok) {
-        throw new Error(`API returned ${orgResponse.status}`);
-      }
-
-      const orgs = await orgResponse.json();
-      if (!orgs || orgs.length === 0) {
-        throw new Error('No organizations found');
-      }
-
-      const orgId = orgs[0].uuid;
-
-      // Fetch organization details
-      const detailsResponse = await fetch(`https://claude.ai/api/organizations/${orgId}`, {
-        credentials: 'include'
-      });
-
-      if (!detailsResponse.ok) {
-        throw new Error(`Failed to fetch org details: ${detailsResponse.status}`);
-      }
-
-      const orgDetails = await detailsResponse.json();
-
-      // Parse API response
-      const result = {
-        provider: PROVIDER_ID,
-        timestamp: Date.now(),
-        success: false,
-        rawData: orgDetails
-      };
-
-      // TODO: Parse actual usage from API response
-      // The structure will depend on what Claude's API returns
-      // For now, mark as needing implementation
-      console.log('[LLM Tracker] Claude API response:', orgDetails);
-
-      return result;
-
-    } catch (error) {
-      console.error('[LLM Tracker] Error fetching from Claude API:', error);
-      return {
-        provider: PROVIDER_ID,
-        timestamp: Date.now(),
-        success: false,
-        error: error.message
-      };
-    }
   }
 
   /**
@@ -148,6 +115,12 @@
     chrome.runtime.sendMessage({
       type: 'USAGE_UPDATE',
       data: usageData
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.error('[LLM Tracker] Error sending to background:', chrome.runtime.lastError);
+      } else if (response) {
+        console.log('[LLM Tracker] ✓ Data sent to background:', response);
+      }
     });
   }
 
@@ -163,29 +136,66 @@
    * Main function to extract and report usage
    */
   async function checkAndReportUsage() {
-    console.log('[LLM Tracker] Checking Claude usage...');
+    console.log('[LLM Tracker] ━━━━━ REFRESH START ━━━━━');
+    console.log('[LLM Tracker] Time:', new Date().toLocaleTimeString());
+    console.log('[LLM Tracker] URL:', window.location.href);
 
-    // First try scraping the page
-    let usageData = scrapeUsageFromPage();
+    const usageData = await scrapeUsageFromPage();
 
-    // If scraping didn't work, try API
-    if (!usageData.success) {
-      console.log('[LLM Tracker] Page scraping failed, trying API...');
-      usageData = await fetchUsageFromAPI();
-    }
+    if (usageData.success) {
+      console.log('[LLM Tracker] ✓ Sending usage data:', usageData);
+      sendUsageData(usageData);
+    } else {
+      console.log('[LLM Tracker] ✗ Failed to get usage data');
+      console.log('[LLM Tracker] Error:', usageData.error);
 
-    // Send data to background script
-    if (usageData.success || usageData.error) {
-      console.log('[LLM Tracker] Sending usage data:', usageData);
+      // Send error state so UI knows we tried
       sendUsageData(usageData);
     }
+
+    console.log('[LLM Tracker] ━━━━━ REFRESH END ━━━━━');
+  }
+
+  /**
+   * Set up MutationObserver to detect when usage updates
+   */
+  function observeUsageChanges() {
+    if (!isOnUsagePage()) return;
+
+    console.log('[LLM Tracker] Setting up MutationObserver for auto-updates...');
+
+    const observer = new MutationObserver((mutations) => {
+      // Check if any mutation contains "% used" text
+      for (const mutation of mutations) {
+        if (mutation.type === 'characterData' || mutation.type === 'childList') {
+          const text = mutation.target.textContent || '';
+          if (text.includes('% used')) {
+            console.log('[LLM Tracker] ⚡ Usage changed detected, refreshing...');
+            checkAndReportUsage();
+            break;
+          }
+        }
+      }
+    });
+
+    // Observe the whole document for changes
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true
+    });
+
+    console.log('[LLM Tracker] ✓ MutationObserver active');
   }
 
   /**
    * Initialize
    */
   function init() {
+    console.log('[LLM Tracker] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log('[LLM Tracker] Claude content script loaded');
+    console.log('[LLM Tracker] Version: DOM-only (TOS-compliant)');
+    console.log('[LLM Tracker] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
     // Check usage when page loads
     if (document.readyState === 'complete') {
@@ -196,21 +206,37 @@
       });
     }
 
-    // If on settings page, check periodically
+    // If on settings page, set up auto-detection
     if (isOnUsagePage()) {
+      // Periodic check every 5 seconds
       setInterval(checkAndReportUsage, CHECK_INTERVAL);
+
+      // Also observe DOM changes for instant updates
+      observeUsageChanges();
     }
 
-    // Listen for messages from popup requesting fresh data
+    // Listen for manual refresh from popup
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+      console.log('[LLM Tracker] Message received:', request.type);
+
       if (request.type === 'REQUEST_USAGE_UPDATE' && request.provider === PROVIDER_ID) {
-        checkAndReportUsage();
-        sendResponse({ status: 'checking' });
+        console.log('[LLM Tracker] 🔄 Manual refresh requested');
+
+        // Trigger immediate refresh
+        checkAndReportUsage().then(() => {
+          console.log('[LLM Tracker] ✓ Manual refresh completed');
+        }).catch(err => {
+          console.error('[LLM Tracker] ✗ Manual refresh failed:', err);
+        });
+
+        sendResponse({ status: 'refreshing' });
       }
+
+      return true; // Keep channel open
     });
   }
 
-  // Start
+  // Start!
   init();
 
 })();
