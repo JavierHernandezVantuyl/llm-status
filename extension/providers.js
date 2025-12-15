@@ -22,7 +22,6 @@ const LLM_PROVIDERS = {
     enabled: true
   },
 
-  // Future providers (disabled for now)
   chatgpt: {
     id: 'chatgpt',
     name: 'ChatGPT',
@@ -33,7 +32,8 @@ const LLM_PROVIDERS = {
       base: 'https://chatgpt.com'
     },
     defaultLimit: 40,
-    enabled: false  // Enable when ready
+    enabled: true,
+    features: ['token-tracking', 'fetch-interception']  // Advanced tracking
   },
 
   openai: {
